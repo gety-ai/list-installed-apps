@@ -4,7 +4,11 @@ version = "0.1.0"
 edition = "2024"
 
 [dependencies]
-windows = { version = "0.61.3", features = ["Win32_System_GroupPolicy"] }
+windows = { version = "0.61.3", features = [
+    "Win32_System_GroupPolicy",
+    "Win32_System_Environment",
+    "Win32_Foundation"
+] }
 serde = { version = "1.0", features = ["derive"] }
 windows-registry = "0.5.2"
 serde_json = "1.0"
