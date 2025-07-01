@@ -1,14 +1,21 @@
 [package]
 name = "list-installed-apps"
 version = "0.1.0"
-edition = "2024"
+edition = "2021"
 
 [dependencies]
-windows = { version = "0.61.3", features = [
+normalize-path = "0.2"
+windows = { version = "0.61", features = [
     "Win32_System_GroupPolicy",
     "Win32_System_Environment",
-    "Win32_Foundation"
+    "Win32_Foundation",
 ] }
-serde = { version = "1.0", features = ["derive"] }
-windows-registry = "0.5.2"
-serde_json = "1.0"
+serde = { version = "1", features = ["derive"] }
+windows-registry = "0.5"
+log = "0.4"
+
+[lib]
+crate-type = ["cdylib", "rlib"]
+
+[dev-dependencies]
+serde_json = "1"
