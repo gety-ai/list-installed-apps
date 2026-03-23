@@ -13,12 +13,12 @@ pub mod prelude;
 
 #[derive(Debug, Serialize)]
 pub struct InstalledPackage {
-    name: String,
-    version: Option<String>,
-    publisher: Option<String>,
-    install_location: Option<String>,
-    uninstall_string: Option<String>,
-    key_path: String,
+    pub name: String,
+    pub version: Option<String>,
+    pub publisher: Option<String>,
+    pub install_location: Option<String>,
+    pub uninstall_string: Option<String>,
+    pub key_path: String,
 }
 
 pub trait InstalledPkgsExt {
