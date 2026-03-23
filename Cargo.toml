@@ -1,18 +1,23 @@
 [package]
 name = "list-installed-apps"
-version = "0.1.1"
+version = "0.2.0"
 edition = "2021"
 
 [dependencies]
 normalize-path = "0.2"
+serde = { version = "1", features = ["derive"] }
+log = "0.4"
+
+[target.'cfg(windows)'.dependencies]
 windows = { version = "0.62.2", features = [
     "Win32_System_GroupPolicy",
     "Win32_System_Environment",
     "Win32_Foundation",
 ] }
-serde = { version = "1", features = ["derive"] }
 windows-registry = "0.6"
-log = "0.4"
+
+[target.'cfg(target_os = "macos")'.dependencies]
+plist = "1"
 
 [lib]
 crate-type = ["cdylib", "rlib"]
