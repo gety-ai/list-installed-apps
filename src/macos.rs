@@ -7,13 +7,21 @@ use std::{
 };
 
 use plist::Value;
+use rayon::prelude::*;
 
 use crate::InstalledPackage;
 
-pub fn collect_installed_apps() -> std::io::Result<Vec<InstalledPackage>> {
-    let mut pkgs = Vec::new();
+fn build_io_pool() -> std::io::Result<rayon::ThreadPool> {
+    let n = std::thread::available_parallelism()
+        .map(|n| (n.get() / 2).clamp(2, 8))
+        .unwrap_or(4);
+    rayon::ThreadPoolBuilder::new()
+        .num_threads(n)
+        .build()
+        .map_err(|e| std::io::Error::other(e.to_string()))
+}
 
-    // 1. Scan .app bundles from well-known directories
+pub fn collect_installed_apps() -> std::io::Result<Vec<InstalledPackage>> {
     let mut app_dirs = vec![
         PathBuf::from("/Applications"),
         PathBuf::from("/System/Applications"),
@@ -22,15 +30,25 @@ pub fn collect_installed_apps() -> std::io::Result<Vec<InstalledPackage>> {
         app_dirs.push(PathBuf::from(home).join("Applications"));
     }
 
-    for dir in &app_dirs {
-        pkgs.extend(harvest_app_dir(dir, 2));
-    }
+    let pool = build_io_pool()?;
 
-    // 2. pkgutil packages
-    pkgs.extend(harvest_pkgutil());
+    // Run all three sources in parallel inside a bounded I/O pool
+    let pkgs = pool.install(|| {
+        let ((app_pkgs, pkgutil_pkgs), brew_pkgs) = rayon::join(
+            || {
+                rayon::join(
+                    || harvest_app_dirs(&app_dirs),
+                    harvest_pkgutil,
+                )
+            },
+            harvest_homebrew,
+        );
 
-    // 3. Homebrew
-    pkgs.extend(harvest_homebrew());
+        let mut pkgs = app_pkgs;
+        pkgs.extend(pkgutil_pkgs);
+        pkgs.extend(brew_pkgs);
+        pkgs
+    });
 
     // Dedup by (name, version)
     let mut seen = HashMap::new();
@@ -50,28 +68,42 @@ pub fn collect_installed_apps() -> std::io::Result<Vec<InstalledPackage>> {
     Ok(seen.into_values().collect())
 }
 
-/// Recursively scan a directory for .app bundles (up to `max_depth` levels of nesting)
-fn harvest_app_dir(dir: &Path, max_depth: u32) -> Vec<InstalledPackage> {
-    let mut pkgs = Vec::new();
+// ---------------------------------------------------------------------------
+// .app bundles
+// ---------------------------------------------------------------------------
+
+/// Collect all .app paths from directories, then parse plists in parallel
+fn harvest_app_dirs(dirs: &[PathBuf]) -> Vec<InstalledPackage> {
+    let paths: Vec<PathBuf> = dirs
+        .iter()
+        .flat_map(|dir| collect_app_paths(dir, 2))
+        .collect();
+
+    paths
+        .par_iter()
+        .filter_map(|path| parse_app_bundle(path))
+        .collect()
+}
+
+/// Recursively collect .app bundle paths (lightweight readdir, no plist parsing)
+fn collect_app_paths(dir: &Path, max_depth: u32) -> Vec<PathBuf> {
+    let mut paths = Vec::new();
 
     let entries = match fs::read_dir(dir) {
         Ok(entries) => entries,
-        Err(_) => return pkgs,
+        Err(_) => return paths,
     };
 
     for entry in entries.flatten() {
         let path = entry.path();
         if path.extension().and_then(|e| e.to_str()) == Some("app") {
-            if let Some(pkg) = parse_app_bundle(&path) {
-                pkgs.push(pkg);
-            }
+            paths.push(path);
         } else if max_depth > 0 && path.is_dir() {
-            // Recurse into subdirectories (e.g., Utilities/)
-            pkgs.extend(harvest_app_dir(&path, max_depth - 1));
+            paths.extend(collect_app_paths(&path, max_depth - 1));
         }
     }
 
-    pkgs
+    paths
 }
 
 /// Parse an .app bundle's Info.plist to extract metadata
@@ -122,7 +154,11 @@ fn parse_app_bundle(app_path: &Path) -> Option<InstalledPackage> {
     })
 }
 
-/// Collect packages installed via pkgutil by reading receipt plists
+// ---------------------------------------------------------------------------
+// pkgutil
+// ---------------------------------------------------------------------------
+
+/// Collect packages installed via pkgutil, reading receipt plists in parallel
 fn harvest_pkgutil() -> Vec<InstalledPackage> {
     let output = match Command::new("pkgutil").arg("--pkgs").output() {
         Ok(o) if o.status.success() => o,
@@ -142,28 +178,29 @@ fn harvest_pkgutil() -> Vec<InstalledPackage> {
 
     let stdout = String::from_utf8_lossy(&output.stdout);
     let receipts_dir = Path::new("/var/db/receipts");
-    let mut pkgs = Vec::new();
 
-    for pkg_id in stdout.lines() {
-        let pkg_id = pkg_id.trim();
-        if pkg_id.is_empty() {
-            continue;
-        }
+    let pkg_ids: Vec<&str> = stdout
+        .lines()
+        .map(|l| l.trim())
+        .filter(|l| !l.is_empty())
+        .collect();
 
-        let receipt_path = receipts_dir.join(format!("{pkg_id}.plist"));
-        let (version, install_location) = parse_receipt_plist(&receipt_path);
+    pkg_ids
+        .par_iter()
+        .map(|pkg_id| {
+            let receipt_path = receipts_dir.join(format!("{pkg_id}.plist"));
+            let (version, install_location) = parse_receipt_plist(&receipt_path);
 
-        pkgs.push(InstalledPackage {
-            name: pkg_id.to_string(),
-            version,
-            publisher: None,
-            install_location,
-            uninstall_string: None,
-            key_path: format!("pkgutil:{pkg_id}"),
-        });
-    }
-
-    pkgs
+            InstalledPackage {
+                name: pkg_id.to_string(),
+                version,
+                publisher: None,
+                install_location,
+                uninstall_string: None,
+                key_path: format!("pkgutil:{pkg_id}"),
+            }
+        })
+        .collect()
 }
 
 /// Parse a pkgutil receipt plist for version and install location
@@ -192,24 +229,39 @@ fn parse_receipt_plist(path: &Path) -> (Option<String>, Option<String>) {
     (version, location)
 }
 
-/// Collect packages installed via Homebrew
-fn harvest_homebrew() -> Vec<InstalledPackage> {
-    let mut pkgs = Vec::new();
+// ---------------------------------------------------------------------------
+// Homebrew
+// ---------------------------------------------------------------------------
 
+/// Collect packages installed via Homebrew (formula + cask in parallel)
+fn harvest_homebrew() -> Vec<InstalledPackage> {
     let brew_prefix = match find_brew_prefix() {
         Some(prefix) => prefix,
-        None => return pkgs,
+        None => return vec![],
     };
     let brew_cmd = PathBuf::from(&brew_prefix).join("bin/brew");
 
-    // Formulas (CLI tools)
-    if let Some(output) = run_brew(&brew_cmd, &["list", "--formula", "--versions"]) {
-        for line in output.lines() {
+    let (formula_pkgs, cask_pkgs) = rayon::join(
+        || harvest_brew_formulas(&brew_cmd, &brew_prefix),
+        || harvest_brew_casks(&brew_cmd),
+    );
+
+    let mut pkgs = formula_pkgs;
+    pkgs.extend(cask_pkgs);
+    pkgs
+}
+
+fn harvest_brew_formulas(brew_cmd: &Path, brew_prefix: &str) -> Vec<InstalledPackage> {
+    let output = match run_brew(brew_cmd, &["list", "--formula", "--versions"]) {
+        Some(o) => o,
+        None => return vec![],
+    };
+
+    output
+        .lines()
+        .filter_map(|line| {
             let mut parts = line.split_whitespace();
-            let name = match parts.next() {
-                Some(n) => n,
-                None => continue,
-            };
+            let name = parts.next()?;
             let version = parts.next().map(String::from);
 
             let install_location = {
@@ -217,39 +269,41 @@ fn harvest_homebrew() -> Vec<InstalledPackage> {
                 Some(format!("{brew_prefix}/Cellar/{name}/{ver}"))
             };
 
-            pkgs.push(InstalledPackage {
+            Some(InstalledPackage {
                 name: name.to_string(),
                 version,
                 publisher: None,
                 install_location,
                 uninstall_string: Some(format!("brew uninstall {name}")),
                 key_path: format!("homebrew:formula:{name}"),
-            });
-        }
-    }
+            })
+        })
+        .collect()
+}
 
-    // Casks (GUI apps — .app bundles already covered by app dir scan)
-    if let Some(output) = run_brew(&brew_cmd, &["list", "--cask", "--versions"]) {
-        for line in output.lines() {
+fn harvest_brew_casks(brew_cmd: &Path) -> Vec<InstalledPackage> {
+    let output = match run_brew(brew_cmd, &["list", "--cask", "--versions"]) {
+        Some(o) => o,
+        None => return vec![],
+    };
+
+    output
+        .lines()
+        .filter_map(|line| {
             let mut parts = line.split_whitespace();
-            let name = match parts.next() {
-                Some(n) => n,
-                None => continue,
-            };
+            let name = parts.next()?;
             let version = parts.next().map(String::from);
 
-            pkgs.push(InstalledPackage {
+            Some(InstalledPackage {
                 name: name.to_string(),
                 version,
                 publisher: None,
                 install_location: None, // Cask apps are in /Applications, covered by .app scan
                 uninstall_string: Some(format!("brew uninstall --cask {name}")),
                 key_path: format!("homebrew:cask:{name}"),
-            });
-        }
-    }
-
-    pkgs
+            })
+        })
+        .collect()
 }
 
 /// Find the Homebrew prefix by checking known locations
