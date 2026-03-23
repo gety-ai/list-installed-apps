@@ -4,9 +4,16 @@ use windows::core::HSTRING;
 use windows::Win32::System::Environment::ExpandEnvironmentStringsW;
 use windows_registry::{Key, CURRENT_USER, LOCAL_MACHINE};
 
-use crate::InstalledPackage;
+use crate::{InstalledApps, InstalledPackage};
 
-pub fn collect_installed_apps() -> std::io::Result<Vec<InstalledPackage>> {
+pub(crate) fn collect(config: InstalledApps) -> std::io::Result<Vec<InstalledPackage>> {
+    if !config.gui {
+        return Ok(vec![]);
+    }
+    collect_installed_apps()
+}
+
+fn collect_installed_apps() -> std::io::Result<Vec<InstalledPackage>> {
     // HKLM – 64‑bit view
     let key_path = r"SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall";
     let hklm = LOCAL_MACHINE

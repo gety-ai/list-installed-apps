@@ -9,7 +9,7 @@ use std::{
 use plist::Value;
 use rayon::prelude::*;
 
-use crate::InstalledPackage;
+use crate::{InstalledApps, InstalledPackage};
 
 fn build_io_pool() -> std::io::Result<rayon::ThreadPool> {
     let n = std::thread::available_parallelism()
@@ -21,27 +21,35 @@ fn build_io_pool() -> std::io::Result<rayon::ThreadPool> {
         .map_err(|e| std::io::Error::other(e.to_string()))
 }
 
-pub fn collect_installed_apps() -> std::io::Result<Vec<InstalledPackage>> {
-    let mut app_dirs = vec![
-        PathBuf::from("/Applications"),
-        PathBuf::from("/System/Applications"),
-    ];
-    if let Ok(home) = env::var("HOME") {
-        app_dirs.push(PathBuf::from(home).join("Applications"));
+pub(crate) fn collect(config: InstalledApps) -> std::io::Result<Vec<InstalledPackage>> {
+    if !config.gui && !config.pkgutil && !config.brew {
+        return Ok(vec![]);
     }
+
+    let app_dirs: Vec<PathBuf> = if config.gui {
+        let mut dirs = vec![
+            PathBuf::from("/Applications"),
+            PathBuf::from("/System/Applications"),
+        ];
+        if let Ok(home) = env::var("HOME") {
+            dirs.push(PathBuf::from(home).join("Applications"));
+        }
+        dirs
+    } else {
+        vec![]
+    };
 
     let pool = build_io_pool()?;
 
-    // Run all three sources in parallel inside a bounded I/O pool
     let pkgs = pool.install(|| {
         let ((app_pkgs, pkgutil_pkgs), brew_pkgs) = rayon::join(
             || {
                 rayon::join(
-                    || harvest_app_dirs(&app_dirs),
-                    harvest_pkgutil,
+                    || if config.gui { harvest_app_dirs(&app_dirs) } else { vec![] },
+                    || if config.pkgutil { harvest_pkgutil() } else { vec![] },
                 )
             },
-            harvest_homebrew,
+            || if config.brew { harvest_homebrew() } else { vec![] },
         );
 
         let mut pkgs = app_pkgs;

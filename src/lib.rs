@@ -33,14 +33,83 @@ impl InstalledPkgsExt for Vec<InstalledPackage> {
     }
 }
 
+/// Builder for configuring which sources to collect installed packages from.
+///
+/// ```no_run
+/// use list_installed_apps::InstalledApps;
+/// // Default: GUI apps only
+/// let pkgs = InstalledApps::default().collect().unwrap();
+///
+/// // All sources (macOS: .app + pkgutil + homebrew)
+/// let pkgs = InstalledApps::all().collect().unwrap();
+/// ```
+pub struct InstalledApps {
+    pub(crate) gui: bool,
+    pub(crate) pkgutil: bool,
+    pub(crate) brew: bool,
+}
+
+impl Default for InstalledApps {
+    fn default() -> Self {
+        Self {
+            gui: true,
+            pkgutil: false,
+            brew: false,
+        }
+    }
+}
+
+impl InstalledApps {
+    /// Enable all available sources.
+    pub fn all() -> Self {
+        Self {
+            gui: true,
+            pkgutil: true,
+            brew: true,
+        }
+    }
+
+    /// Collect GUI applications (.app bundles on macOS, registry on Windows).
+    pub fn gui(mut self, enable: bool) -> Self {
+        self.gui = enable;
+        self
+    }
+
+    /// Collect packages from `pkgutil` receipts (macOS only, no-op on other platforms).
+    pub fn pkgutil(mut self, enable: bool) -> Self {
+        self.pkgutil = enable;
+        self
+    }
+
+    /// Collect packages from Homebrew (macOS only, no-op on other platforms).
+    pub fn brew(mut self, enable: bool) -> Self {
+        self.brew = enable;
+        self
+    }
+
+    /// Execute the collection with the configured sources.
+    pub fn collect(self) -> std::io::Result<Vec<InstalledPackage>> {
+        platform_collect(self)
+    }
+}
+
+/// Convenience function — equivalent to `InstalledApps::default().collect()`.
+pub fn collect_installed_apps() -> std::io::Result<Vec<InstalledPackage>> {
+    InstalledApps::default().collect()
+}
+
 #[cfg(windows)]
-pub use windows_impl::collect_installed_apps;
+fn platform_collect(config: InstalledApps) -> std::io::Result<Vec<InstalledPackage>> {
+    windows_impl::collect(config)
+}
 
 #[cfg(target_os = "macos")]
-pub use macos::collect_installed_apps;
+fn platform_collect(config: InstalledApps) -> std::io::Result<Vec<InstalledPackage>> {
+    macos::collect(config)
+}
 
 #[cfg(not(any(windows, target_os = "macos")))]
-pub fn collect_installed_apps() -> std::io::Result<Vec<InstalledPackage>> {
+fn platform_collect(_config: InstalledApps) -> std::io::Result<Vec<InstalledPackage>> {
     Err(std::io::Error::new(
         std::io::ErrorKind::Unsupported,
         "Platform not supported",
