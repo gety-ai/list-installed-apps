@@ -15,7 +15,7 @@ mod macos;
 
 #[derive(Debug, Serialize)]
 pub struct InstalledPackage {
-    pub name: String,
+    pub display_name: String,
     pub version: Option<String>,
     pub publisher: Option<String>,
     pub install_location: Option<String>,

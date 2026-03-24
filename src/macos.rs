@@ -61,9 +61,9 @@ pub(crate) fn collect(config: InstalledApps) -> std::io::Result<Vec<InstalledPac
     // Dedup by (name, version)
     let mut seen = HashMap::new();
     for pkg in pkgs {
-        match seen.get_mut(&(pkg.name.clone(), pkg.version.clone())) {
+        match seen.get_mut(&(pkg.display_name.clone(), pkg.version.clone())) {
             None => {
-                seen.insert((pkg.name.clone(), pkg.version.clone()), pkg);
+                seen.insert((pkg.display_name.clone(), pkg.version.clone()), pkg);
             }
             Some(existing) => {
                 if existing.install_location.is_none() {
@@ -119,7 +119,7 @@ fn parse_app_bundle(app_path: &Path) -> Option<InstalledPackage> {
     let plist_path = app_path.join("Contents/Info.plist");
     let dict = Value::from_file(&plist_path).ok()?.into_dictionary()?;
 
-    let name = dict
+    let display_name = dict
         .get("CFBundleDisplayName")
         .or_else(|| dict.get("CFBundleName"))
         .and_then(|v| v.as_string())
@@ -131,7 +131,7 @@ fn parse_app_bundle(app_path: &Path) -> Option<InstalledPackage> {
                 .unwrap_or_default()
         });
 
-    if name.is_empty() {
+    if display_name.is_empty() {
         return None;
     }
 
@@ -153,7 +153,7 @@ fn parse_app_bundle(app_path: &Path) -> Option<InstalledPackage> {
         .unwrap_or_else(|| app_path.to_string_lossy().to_string());
 
     Some(InstalledPackage {
-        name,
+        display_name,
         version,
         publisher,
         install_location: Some(app_path.to_string_lossy().to_string()),
@@ -200,7 +200,7 @@ fn harvest_pkgutil() -> Vec<InstalledPackage> {
             let (version, install_location) = parse_receipt_plist(&receipt_path);
 
             InstalledPackage {
-                name: pkg_id.to_string(),
+                display_name: pkg_id.to_string(),
                 version,
                 publisher: None,
                 install_location,
@@ -278,7 +278,7 @@ fn harvest_brew_formulas(brew_cmd: &Path, brew_prefix: &str) -> Vec<InstalledPac
             };
 
             Some(InstalledPackage {
-                name: name.to_string(),
+                display_name: name.to_string(),
                 version,
                 publisher: None,
                 install_location,
@@ -303,7 +303,7 @@ fn harvest_brew_casks(brew_cmd: &Path) -> Vec<InstalledPackage> {
             let version = parts.next().map(String::from);
 
             Some(InstalledPackage {
-                name: name.to_string(),
+                display_name: name.to_string(),
                 version,
                 publisher: None,
                 install_location: None, // Cask apps are in /Applications, covered by .app scan

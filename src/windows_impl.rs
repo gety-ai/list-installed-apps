@@ -51,9 +51,9 @@ fn collect_registry_apps() -> std::io::Result<Vec<InstalledPackage>> {
     // only the first occurrence we encounter.
     let mut seen = HashMap::new();
     for pkg in pkgs.into_iter() {
-        match seen.get_mut(&(pkg.name.clone(), pkg.version.clone())) {
+        match seen.get_mut(&(pkg.display_name.clone(), pkg.version.clone())) {
             None => {
-                seen.insert((pkg.name.clone(), pkg.version.clone()), pkg);
+                seen.insert((pkg.display_name.clone(), pkg.version.clone()), pkg);
             }
             // Merge the install location if it's not set
             Some(existing) => {
@@ -102,7 +102,7 @@ fn collect_appx_packages() -> std::io::Result<Vec<InstalledPackage>> {
         };
 
         // Prefer the localized DisplayName; fall back to the package Id.Name
-        let name = pkg
+        let display_name = pkg
             .DisplayName()
             .map(|s: HSTRING| s.to_string())
             .unwrap_or_else(|_| {
@@ -111,7 +111,7 @@ fn collect_appx_packages() -> std::io::Result<Vec<InstalledPackage>> {
                     .unwrap_or_default()
             });
 
-        if name.is_empty() {
+        if display_name.is_empty() {
             continue;
         }
 
@@ -136,7 +136,7 @@ fn collect_appx_packages() -> std::io::Result<Vec<InstalledPackage>> {
             .unwrap_or_default();
 
         pkgs.push(InstalledPackage {
-            name,
+            display_name,
             version,
             publisher,
             install_location,
@@ -166,7 +166,7 @@ fn harvest_uninstall_hive(root: &Key, key_path: &str) -> Vec<InstalledPackage> {
 
             if let Some(display_name) = name {
                 pkgs.push(InstalledPackage {
-                    name: display_name,
+                    display_name,
                     version: sub.get_string("DisplayVersion").ok(),
                     publisher: sub.get_string("Publisher").ok(),
                     install_location: sub.get_string("InstallLocation").ok(),

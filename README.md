@@ -62,7 +62,7 @@ let dirs = InstalledApps::all()
 
 | Field | Type | Description |
 |-------|------|-------------|
-| `name` | `String` | Display name |
+| `display_name` | `String` | Display name |
 | `version` | `Option<String>` | Version string |
 | `publisher` | `Option<String>` | Publisher / developer |
 | `install_location` | `Option<String>` | Install directory path |
