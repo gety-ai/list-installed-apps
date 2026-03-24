@@ -13,6 +13,9 @@ windows = { version = "0.62.2", features = [
     "Win32_System_GroupPolicy",
     "Win32_System_Environment",
     "Win32_Foundation",
+    "Management_Deployment",
+    "ApplicationModel",
+    "Foundation_Collections",
 ] }
 windows-registry = "0.6"
 

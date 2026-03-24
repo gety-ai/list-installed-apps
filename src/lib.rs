@@ -45,6 +45,7 @@ impl InstalledPkgsExt for Vec<InstalledPackage> {
 /// ```
 pub struct InstalledApps {
     pub(crate) gui: bool,
+    pub(crate) appx: bool,
     pub(crate) pkgutil: bool,
     pub(crate) brew: bool,
 }
@@ -53,6 +54,7 @@ impl Default for InstalledApps {
     fn default() -> Self {
         Self {
             gui: true,
+            appx: false,
             pkgutil: false,
             brew: false,
         }
@@ -64,6 +66,7 @@ impl InstalledApps {
     pub fn all() -> Self {
         Self {
             gui: true,
+            appx: true,
             pkgutil: true,
             brew: true,
         }
@@ -72,6 +75,12 @@ impl InstalledApps {
     /// Collect GUI applications (.app bundles on macOS, registry on Windows).
     pub fn gui(mut self, enable: bool) -> Self {
         self.gui = enable;
+        self
+    }
+
+    /// Collect AppX/MSIX packages (Windows only, no-op on other platforms).
+    pub fn appx(mut self, enable: bool) -> Self {
+        self.appx = enable;
         self
     }
 

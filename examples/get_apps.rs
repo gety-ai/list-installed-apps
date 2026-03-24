@@ -3,7 +3,7 @@ use std::collections::BTreeSet;
 use list_installed_apps::prelude::*;
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
-    let pkgs = collect_installed_apps()?;
+    let pkgs = InstalledApps::all().collect()?;
     println!("pkgs: {pkgs:?}",);
     let names = pkgs.iter().map(|p| &p.name).collect::<BTreeSet<_>>();
     println!("names: {}", serde_json::to_string_pretty(&names)?);

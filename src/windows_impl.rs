@@ -7,13 +7,23 @@ use windows_registry::{Key, CURRENT_USER, LOCAL_MACHINE};
 use crate::{InstalledApps, InstalledPackage};
 
 pub(crate) fn collect(config: InstalledApps) -> std::io::Result<Vec<InstalledPackage>> {
-    if !config.gui {
-        return Ok(vec![]);
+    let mut pkgs = Vec::new();
+
+    if config.gui {
+        pkgs.extend(collect_registry_apps()?);
     }
-    collect_installed_apps()
+
+    if config.appx {
+        match collect_appx_packages() {
+            Ok(appx_pkgs) => pkgs.extend(appx_pkgs),
+            Err(e) => log::error!("Error collecting AppX packages: {e}"),
+        }
+    }
+
+    Ok(pkgs)
 }
 
-fn collect_installed_apps() -> std::io::Result<Vec<InstalledPackage>> {
+fn collect_registry_apps() -> std::io::Result<Vec<InstalledPackage>> {
     // HKLM – 64‑bit view
     let key_path = r"SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall";
     let hklm = LOCAL_MACHINE
@@ -54,6 +64,86 @@ fn collect_installed_apps() -> std::io::Result<Vec<InstalledPackage>> {
         }
     }
     let pkgs = seen.into_values().collect::<Vec<_>>();
+
+    Ok(pkgs)
+}
+
+/// Collect UWP / Microsoft Store (AppX/MSIX) packages via WinRT PackageManager.
+fn collect_appx_packages() -> std::io::Result<Vec<InstalledPackage>> {
+    use windows::ApplicationModel::{Package, PackageId};
+    use windows::Management::Deployment::PackageManager;
+
+    let pm = PackageManager::new()
+        .map_err(|e| std::io::Error::other(format!("PackageManager::new failed: {e}")))?;
+
+    let packages = pm
+        .FindPackagesByUserSecurityId(&HSTRING::new())
+        .map_err(|e| std::io::Error::other(format!("FindPackagesByUserSecurityId failed: {e}")))?;
+
+    let mut pkgs = Vec::new();
+
+    for pkg in packages.into_iter().filter_map(|p: Package| Some(p)) {
+        // Skip framework packages (runtime dependencies, not user-visible apps)
+        if pkg.IsFramework().unwrap_or(false) {
+            continue;
+        }
+        // Skip resource packages (language/scale packs)
+        if pkg.IsResourcePackage().unwrap_or(false) {
+            continue;
+        }
+        // Skip bundles (the individual arch packages are already enumerated)
+        if pkg.IsBundle().unwrap_or(false) {
+            continue;
+        }
+
+        let id: PackageId = match pkg.Id() {
+            Ok(id) => id,
+            Err(_) => continue,
+        };
+
+        // Prefer the localized DisplayName; fall back to the package Id.Name
+        let name = pkg
+            .DisplayName()
+            .map(|s: HSTRING| s.to_string())
+            .unwrap_or_else(|_| {
+                id.Name()
+                    .map(|s: HSTRING| s.to_string())
+                    .unwrap_or_default()
+            });
+
+        if name.is_empty() {
+            continue;
+        }
+
+        let version = id.Version().ok().map(|v| {
+            format!("{}.{}.{}.{}", v.Major, v.Minor, v.Build, v.Revision)
+        });
+
+        let publisher = id
+            .Publisher()
+            .ok()
+            .map(|s: HSTRING| s.to_string());
+
+        let install_location = pkg
+            .InstalledPath()
+            .ok()
+            .map(|s: HSTRING| s.to_string())
+            .filter(|s| !s.is_empty());
+
+        let family_name = id
+            .FamilyName()
+            .map(|s: HSTRING| s.to_string())
+            .unwrap_or_default();
+
+        pkgs.push(InstalledPackage {
+            name,
+            version,
+            publisher,
+            install_location,
+            uninstall_string: None,
+            key_path: family_name,
+        });
+    }
 
     Ok(pkgs)
 }
