@@ -137,6 +137,7 @@ fn collect_appx_packages() -> std::io::Result<Vec<InstalledPackage>> {
 
         pkgs.push(InstalledPackage {
             display_name,
+            name: None,
             version,
             publisher,
             install_location,
@@ -167,6 +168,7 @@ fn harvest_uninstall_hive(root: &Key, key_path: &str) -> Vec<InstalledPackage> {
             if let Some(display_name) = name {
                 pkgs.push(InstalledPackage {
                     display_name,
+                    name: None,
                     version: sub.get_string("DisplayVersion").ok(),
                     publisher: sub.get_string("Publisher").ok(),
                     install_location: sub.get_string("InstallLocation").ok(),
