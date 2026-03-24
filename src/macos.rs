@@ -146,7 +146,7 @@ fn parse_app_bundle(app_path: &Path) -> Option<InstalledPackage> {
         .and_then(|v| v.as_string())
         .map(String::from);
 
-    let key_path = dict
+    let identifier = dict
         .get("CFBundleIdentifier")
         .and_then(|v| v.as_string())
         .map(String::from)
@@ -158,7 +158,7 @@ fn parse_app_bundle(app_path: &Path) -> Option<InstalledPackage> {
         publisher,
         install_location: Some(app_path.to_string_lossy().to_string()),
         uninstall_string: None,
-        key_path,
+        identifier,
     })
 }
 
@@ -205,7 +205,7 @@ fn harvest_pkgutil() -> Vec<InstalledPackage> {
                 publisher: None,
                 install_location,
                 uninstall_string: None,
-                key_path: format!("pkgutil:{pkg_id}"),
+                identifier: format!("pkgutil:{pkg_id}"),
             }
         })
         .collect()
@@ -283,7 +283,7 @@ fn harvest_brew_formulas(brew_cmd: &Path, brew_prefix: &str) -> Vec<InstalledPac
                 publisher: None,
                 install_location,
                 uninstall_string: Some(format!("brew uninstall {name}")),
-                key_path: format!("homebrew:formula:{name}"),
+                identifier: format!("homebrew:formula:{name}"),
             })
         })
         .collect()
@@ -308,7 +308,7 @@ fn harvest_brew_casks(brew_cmd: &Path) -> Vec<InstalledPackage> {
                 publisher: None,
                 install_location: None, // Cask apps are in /Applications, covered by .app scan
                 uninstall_string: Some(format!("brew uninstall --cask {name}")),
-                key_path: format!("homebrew:cask:{name}"),
+                identifier: format!("homebrew:cask:{name}"),
             })
         })
         .collect()

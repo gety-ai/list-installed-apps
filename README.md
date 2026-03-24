@@ -67,7 +67,7 @@ let dirs = InstalledApps::all()
 | `publisher` | `Option<String>` | Publisher / developer |
 | `install_location` | `Option<String>` | Install directory path |
 | `uninstall_string` | `Option<String>` | Uninstall command (registry apps only) |
-| `key_path` | `String` | Registry key path or AppX package family name |
+| `identifier` | `String` | Registry key path (Windows), AppX family name, or bundle identifier (macOS) |
 
 ## License
 

@@ -20,7 +20,7 @@ pub struct InstalledPackage {
     pub publisher: Option<String>,
     pub install_location: Option<String>,
     pub uninstall_string: Option<String>,
-    pub key_path: String,
+    pub identifier: String,
 }
 
 pub trait InstalledPkgsExt {

@@ -141,7 +141,7 @@ fn collect_appx_packages() -> std::io::Result<Vec<InstalledPackage>> {
             publisher,
             install_location,
             uninstall_string: None,
-            key_path: family_name,
+            identifier: family_name,
         });
     }
 
@@ -171,7 +171,7 @@ fn harvest_uninstall_hive(root: &Key, key_path: &str) -> Vec<InstalledPackage> {
                     publisher: sub.get_string("Publisher").ok(),
                     install_location: sub.get_string("InstallLocation").ok(),
                     uninstall_string: sub.get_string("UninstallString").ok(),
-                    key_path: format!("{key_path}\\{sk}"),
+                    identifier: format!("{key_path}\\{sk}"),
                 });
             }
         }
