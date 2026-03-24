@@ -61,9 +61,9 @@ pub(crate) fn collect(config: InstalledApps) -> std::io::Result<Vec<InstalledPac
     // Dedup by (name, version)
     let mut seen = HashMap::new();
     for pkg in pkgs {
-        match seen.get_mut(&(pkg.display_name.clone(), pkg.version.clone())) {
+        match seen.get_mut(&(pkg.name.clone(), pkg.version.clone())) {
             None => {
-                seen.insert((pkg.display_name.clone(), pkg.version.clone()), pkg);
+                seen.insert((pkg.name.clone(), pkg.version.clone()), pkg);
             }
             Some(existing) => {
                 if existing.install_location.is_none() {
@@ -119,21 +119,20 @@ fn parse_app_bundle(app_path: &Path) -> Option<InstalledPackage> {
     let plist_path = app_path.join("Contents/Info.plist");
     let dict = Value::from_file(&plist_path).ok()?.into_dictionary()?;
 
+    let name = app_path
+        .file_stem()
+        .map(|s| s.to_string_lossy().to_string())?;
+
+    if name.is_empty() {
+        return None;
+    }
+
     let display_name = dict
         .get("CFBundleDisplayName")
         .or_else(|| dict.get("CFBundleName"))
         .and_then(|v| v.as_string())
         .map(String::from)
-        .unwrap_or_else(|| {
-            app_path
-                .file_stem()
-                .map(|s| s.to_string_lossy().to_string())
-                .unwrap_or_default()
-        });
-
-    if display_name.is_empty() {
-        return None;
-    }
+        .filter(|s| s != &name); // Only set if different from name
 
     let version = dict
         .get("CFBundleShortVersionString")
@@ -152,13 +151,9 @@ fn parse_app_bundle(app_path: &Path) -> Option<InstalledPackage> {
         .map(String::from)
         .unwrap_or_else(|| app_path.to_string_lossy().to_string());
 
-    let name = app_path
-        .file_stem()
-        .map(|s| s.to_string_lossy().to_string());
-
     Some(InstalledPackage {
-        display_name,
         name,
+        display_name,
         version,
         publisher,
         install_location: Some(app_path.to_string_lossy().to_string()),
@@ -205,8 +200,8 @@ fn harvest_pkgutil() -> Vec<InstalledPackage> {
             let (version, install_location) = parse_receipt_plist(&receipt_path);
 
             InstalledPackage {
-                display_name: pkg_id.to_string(),
-                name: None,
+                name: pkg_id.to_string(),
+                display_name: None,
                 version,
                 publisher: None,
                 install_location,
@@ -284,8 +279,8 @@ fn harvest_brew_formulas(brew_cmd: &Path, brew_prefix: &str) -> Vec<InstalledPac
             };
 
             Some(InstalledPackage {
-                display_name: name.to_string(),
-                name: None,
+                name: name.to_string(),
+                display_name: None,
                 version,
                 publisher: None,
                 install_location,
@@ -310,8 +305,8 @@ fn harvest_brew_casks(brew_cmd: &Path) -> Vec<InstalledPackage> {
             let version = parts.next().map(String::from);
 
             Some(InstalledPackage {
-                display_name: name.to_string(),
-                name: None,
+                name: name.to_string(),
+                display_name: None,
                 version,
                 publisher: None,
                 install_location: None, // Cask apps are in /Applications, covered by .app scan

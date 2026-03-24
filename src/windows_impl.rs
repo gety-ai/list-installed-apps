@@ -51,9 +51,9 @@ fn collect_registry_apps() -> std::io::Result<Vec<InstalledPackage>> {
     // only the first occurrence we encounter.
     let mut seen = HashMap::new();
     for pkg in pkgs.into_iter() {
-        match seen.get_mut(&(pkg.display_name.clone(), pkg.version.clone())) {
+        match seen.get_mut(&(pkg.name.clone(), pkg.version.clone())) {
             None => {
-                seen.insert((pkg.display_name.clone(), pkg.version.clone()), pkg);
+                seen.insert((pkg.name.clone(), pkg.version.clone()), pkg);
             }
             // Merge the install location if it's not set
             Some(existing) => {
@@ -101,19 +101,20 @@ fn collect_appx_packages() -> std::io::Result<Vec<InstalledPackage>> {
             Err(_) => continue,
         };
 
-        // Prefer the localized DisplayName; fall back to the package Id.Name
+        let name = id
+            .Name()
+            .map(|s: HSTRING| s.to_string())
+            .unwrap_or_default();
+
+        if name.is_empty() {
+            continue;
+        }
+
         let display_name = pkg
             .DisplayName()
             .map(|s: HSTRING| s.to_string())
-            .unwrap_or_else(|_| {
-                id.Name()
-                    .map(|s: HSTRING| s.to_string())
-                    .unwrap_or_default()
-            });
-
-        if display_name.is_empty() {
-            continue;
-        }
+            .ok()
+            .filter(|s| !s.is_empty() && s != &name);
 
         let version = id.Version().ok().map(|v| {
             format!("{}.{}.{}.{}", v.Major, v.Minor, v.Build, v.Revision)
@@ -136,8 +137,8 @@ fn collect_appx_packages() -> std::io::Result<Vec<InstalledPackage>> {
             .unwrap_or_default();
 
         pkgs.push(InstalledPackage {
+            name,
             display_name,
-            name: None,
             version,
             publisher,
             install_location,
@@ -163,12 +164,10 @@ fn harvest_uninstall_hive(root: &Key, key_path: &str) -> Vec<InstalledPackage> {
 
     for sk in keys {
         if let Ok(sub) = root.open(&sk) {
-            let name = sub.get_string("DisplayName").ok();
-
-            if let Some(display_name) = name {
+            if let Ok(name) = sub.get_string("DisplayName") {
                 pkgs.push(InstalledPackage {
-                    display_name,
-                    name: None,
+                    name,
+                    display_name: None,
                     version: sub.get_string("DisplayVersion").ok(),
                     publisher: sub.get_string("Publisher").ok(),
                     install_location: sub.get_string("InstallLocation").ok(),

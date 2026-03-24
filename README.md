@@ -62,8 +62,8 @@ let dirs = InstalledApps::all()
 
 | Field | Type | Description |
 |-------|------|-------------|
-| `display_name` | `String` | Display name (`CFBundleDisplayName`, registry `DisplayName`, etc.) |
-| `name` | `Option<String>` | Filesystem app name (macOS `.app` stem, e.g. `Visual Studio Code`) |
+| `name` | `String` | Primary name (`.app` stem, registry `DisplayName`, AppX `Id.Name`) |
+| `display_name` | `Option<String>` | User-friendly display name, if different from `name` (e.g. AppX `DisplayName`) |
 | `version` | `Option<String>` | Version string |
 | `publisher` | `Option<String>` | Publisher / developer |
 | `install_location` | `Option<String>` | Install directory path |
